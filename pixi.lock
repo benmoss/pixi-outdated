@@ -17,8 +17,6 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2025.10.5-hbd8a1cb_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-deny-0.18.5-h8d80559_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/dprint-0.50.0-h8dba533_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/gmp-6.3.0-h7bae524_2.conda
-      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/go-shfmt-3.12.0-h820172f_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/icu-75.1-hfee45f7_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/lefthook-1.13.6-h820172f_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/libcxx-21.1.3-hf598326_0.conda
@@ -39,7 +37,6 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/ruff-0.12.12-h2342e2b_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/rust-1.90.0-h4ff7c5d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/rust-std-aarch64-apple-darwin-1.90.0-hf6ec828_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/shellcheck-0.10.0-hecfb573_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/taplo-0.10.0-h2b2570c_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tk-8.6.13-h892fb3f_2.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/typos-1.38.1-hd1458d2_0.conda
@@ -94,22 +91,6 @@ packages:
   license_family: MIT
   size: 5466628
   timestamp: 1747623425492
-- conda: https://conda.anaconda.org/conda-forge/osx-arm64/gmp-6.3.0-h7bae524_2.conda
-  sha256: 76e222e072d61c840f64a44e0580c2503562b009090f55aa45053bf1ccb385dd
-  md5: eed7278dfbab727b56f2c0b64330814b
-  depends:
-  - __osx >=11.0
-  - libcxx >=16
-  license: GPL-2.0-or-later OR LGPL-3.0-or-later
-  size: 365188
-  timestamp: 1718981343258
-- conda: https://conda.anaconda.org/conda-forge/osx-arm64/go-shfmt-3.12.0-h820172f_0.conda
-  sha256: cd9bcab30f3f1d748a3c5968db7c7bd3c5e6a1c5603ac5b69f9421b32ed7e0f9
-  md5: 363a2303473b20a5c494886730fe486c
-  license: BSD-3-Clause
-  license_family: BSD
-  size: 1742749
-  timestamp: 1751843192230
 - conda: https://conda.anaconda.org/conda-forge/osx-arm64/icu-75.1-hfee45f7_0.conda
   sha256: 9ba12c93406f3df5ab0a43db8a4b4ef67a5871dfd401010fbe29b218b2cbe620
   md5: 5eb22c1d7b3fc4abb50d92d621583137
@@ -322,15 +303,6 @@ packages:
   license_family: MIT
   size: 34394510
   timestamp: 1758349841329
-- conda: https://conda.anaconda.org/conda-forge/osx-arm64/shellcheck-0.10.0-hecfb573_0.conda
-  sha256: d175f46af454d3f2ba97f0a4be8a4fdf962aaec996db54dfcf8044d38da3769c
-  md5: 6b2856ca39fa39c438dcd46140cd894e
-  depends:
-  - gmp >=6.3.0,<7.0a0
-  license: GPL-3.0-only
-  license_family: GPL
-  size: 1320371
-  timestamp: 1713720918209
 - conda: https://conda.anaconda.org/conda-forge/osx-arm64/taplo-0.10.0-h2b2570c_1.conda
   sha256: c05b9d0bb740f48671d643d0e258639a3e727785b1eb62582385943ddabc5b6b
   md5: 7b818d29210b93c231bc5bb0cd133d3b

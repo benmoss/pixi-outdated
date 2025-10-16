@@ -23,9 +23,6 @@ pre-commit:
       glob: "*.rs"
       stage_fixed: true
       run: pixi {run} cargo-fmt
-    - name: shell-format
-      glob: "*.{sh, bash}"
-      run: pixi {run} shell-format {staged_files}
     - name: taplo
       stage_fixed: true
       glob: "*.toml"
