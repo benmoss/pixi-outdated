@@ -8,9 +8,11 @@ pub struct PixiPackage {
     pub version: String,
     #[serde(default)]
     pub build: Option<String>,
-    pub size_bytes: u64,
+    #[serde(default)]
+    pub size_bytes: Option<u64>,
     pub kind: PackageKind,
-    pub source: String,
+    #[serde(default)]
+    pub source: Option<String>,
     pub is_explicit: bool,
 }
 
@@ -78,8 +80,12 @@ pub fn get_package_list(
     let stdout =
         String::from_utf8(output.stdout).context("pixi list output was not valid UTF-8")?;
 
-    let packages: Vec<PixiPackage> =
-        serde_json::from_str(&stdout).context("Failed to parse JSON output from pixi list")?;
+    let packages: Vec<PixiPackage> = serde_json::from_str(&stdout).with_context(|| {
+        format!(
+            "Failed to parse JSON output from pixi list. Output was:\n{}",
+            stdout
+        )
+    })?;
 
     Ok(packages)
 }

@@ -105,57 +105,68 @@ async fn run(cli: Cli) -> Result<()> {
         match package.kind {
             pixi_outdated::pixi::PackageKind::Conda => {
                 // Extract channel URL from the source
-                if let Some(channel_url) =
-                    pixi_outdated::conda::extract_channel_url(&package.source)
-                {
-                    if cli.verbose {
-                        println!("Checking {} (conda) from {}...", package.name, channel_url);
-                    }
+                if let Some(ref source) = package.source {
+                    if let Some(channel_url) = pixi_outdated::conda::extract_channel_url(source) {
+                        if cli.verbose {
+                            println!("Checking {} (conda) from {}...", package.name, channel_url);
+                        }
 
-                    match pixi_outdated::conda::get_latest_conda_version(
-                        &package.name,
-                        &channel_url,
-                        platform,
-                    )
-                    .await
-                    {
-                        Ok(Some(latest)) => {
-                            if latest != package.version {
-                                println!(
-                                    "{}: {} -> {} (update available)",
-                                    package.name, package.version, latest
-                                );
-                            } else if cli.verbose {
-                                println!("{}: {} (up to date)", package.name, package.version);
+                        match pixi_outdated::conda::get_latest_conda_version(
+                            &package.name,
+                            &channel_url,
+                            platform,
+                        )
+                        .await
+                        {
+                            Ok(Some(latest)) => {
+                                if latest != package.version {
+                                    println!("{}: {} -> {}", package.name, package.version, latest);
+                                } else if cli.verbose {
+                                    println!("{}: {} (up to date)", package.name, package.version);
+                                }
+                            }
+                            Ok(None) => {
+                                if cli.verbose {
+                                    println!(
+                                        "{}: {} (no newer version found)",
+                                        package.name, package.version
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("Error checking {}: {}", package.name, e);
                             }
                         }
-                        Ok(None) => {
-                            if cli.verbose {
-                                println!(
-                                    "{}: {} (no newer version found)",
-                                    package.name, package.version
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Error checking {}: {}", package.name, e);
-                        }
+                    } else if cli.verbose {
+                        println!(
+                            "Skipping {} (conda): unable to extract channel URL",
+                            package.name
+                        );
                     }
+                } else if cli.verbose {
+                    println!("Skipping {} (conda): no source URL", package.name);
                 }
             }
             pixi_outdated::pixi::PackageKind::Pypi => {
-                // TODO: Query PyPI
                 if cli.verbose {
-                    println!(
-                        "{}: {} (PyPI - not yet implemented)",
-                        package.name, package.version
-                    );
+                    println!("Checking {} (PyPI)...", package.name);
+                }
+
+                match pixi_outdated::pypi::get_latest_pypi_version(&package.name).await {
+                    Ok(latest) => {
+                        if latest != package.version {
+                            println!("{}: {} -> {}", package.name, package.version, latest);
+                        } else if cli.verbose {
+                            println!("{}: {} (up to date)", package.name, package.version);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error checking {}: {}", package.name, e);
+                    }
                 }
             }
         }
     }
-
-    println!("\nAnalysis complete!");
 
     Ok(())
 }
