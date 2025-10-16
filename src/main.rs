@@ -45,8 +45,9 @@ async fn main() -> Result<()> {
     if cli.verbose {
         tracing_subscriber::fmt()
             .with_env_filter(
-                tracing_subscriber::EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| "rattler_repodata_gateway=debug,pixi_outdated=debug".into()),
+                tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                    "rattler_repodata_gateway=debug,pixi_outdated=debug".into()
+                }),
             )
             .init();
     }
@@ -104,7 +105,9 @@ async fn run(cli: Cli) -> Result<()> {
         match package.kind {
             pixi_outdated::pixi::PackageKind::Conda => {
                 // Extract channel URL from the source
-                if let Some(channel_url) = pixi_outdated::conda::extract_channel_url(&package.source) {
+                if let Some(channel_url) =
+                    pixi_outdated::conda::extract_channel_url(&package.source)
+                {
                     if cli.verbose {
                         println!("Checking {} (conda) from {}...", package.name, channel_url);
                     }
@@ -143,7 +146,10 @@ async fn run(cli: Cli) -> Result<()> {
             pixi_outdated::pixi::PackageKind::Pypi => {
                 // TODO: Query PyPI
                 if cli.verbose {
-                    println!("{}: {} (PyPI - not yet implemented)", package.name, package.version);
+                    println!(
+                        "{}: {} (PyPI - not yet implemented)",
+                        package.name, package.version
+                    );
                 }
             }
         }

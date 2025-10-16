@@ -1,18 +1,49 @@
-[project]
-name = "big-belly-nyc"
-version = "0.1.0"
-description = "Add a short description here"
+[workspace]
 authors = ["Ben Moss <ben@mossity.com>"]
 channels = ["conda-forge"]
+name = "pixi-update"
 platforms = ["osx-arm64"]
+version = "0.1.0"
 
 [tasks]
-regenerate = "rm bins.db && git-history  file bins.db bins.json --id serialNumber --convert 'json.loads(content)[\"compostAssets\"]' --full-versions --namespace bin"
 
 [dependencies]
-git-history = "*"
-datasette = "*"
-sqlite = ">=3.47.2,<4"
+rust = ">=1.90.0,<1.91"
 
-[pypi-dependencies]
-cowsay = ">=6.1, <7"
+[feature.lint.dependencies]
+basedpyright = ">=1.31.4,<2"
+cargo-deny = ">=0.18.3,<0.19"
+dprint = ">=0.49.1,<0.51"
+go-shfmt = ">=3.11.0,<4"
+lefthook = ">=1.13.6,<2"
+ruff = ">=0.12,<0.13"
+shellcheck = ">=0.10.0,<0.11"
+taplo = ">=0.10.0,<0.11"
+typos = ">=1.29.10,<2"
+
+[environments]
+lint = { features = ["lint"] }
+
+[feature.lint.tasks]
+cargo-clippy = "cargo clippy --all-targets --workspace -- -D warnings"
+cargo-deny = "cargo deny --workspace check license --deny warnings"
+cargo-fmt = "cargo fmt --all"
+check-openssl = "python tests/scripts/check-openssl.py"
+dprint-check = { cmd = "dprint check --log-level=silent", description = "Check formatting with dprint" }
+dprint-fmt = { cmd = "dprint fmt --incremental=false", description = "Format with dprint" }
+lefthook = { cmd = "lefthook", description = "Run lefthook" }
+lint = { depends-on = [
+  "lint-fast",
+  "lint-slow",
+], description = "Run all linters and formatters on all code" }
+lint-fast = { cmd = "lefthook run pre-commit --all-files --force", description = "Run all fast linters and formatters on all code (no clippy)" }
+lint-slow = { cmd = "lefthook run pre-push --all-files --force", description = "Run all slow linters and formatters on all code" }
+pre-commit-install = "lefthook install"
+pre-commit-install-minimal = "lefthook install pre-commit"
+ruff-format = "ruff format --exit-non-zero-on-format --force-exclude"
+ruff-lint = "ruff check --fix --exit-non-zero-on-fix --force-exclude"
+shell-format = "shfmt --write --indent=4 --simplify --binary-next-line"
+toml-format = { cmd = "taplo fmt", env = { RUST_LOG = "warn" } }
+toml-lint = "taplo lint --verbose **/pixi.toml"
+typecheck-python = "basedpyright"
+typos = "typos --force-exclude"

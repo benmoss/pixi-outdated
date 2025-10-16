@@ -22,6 +22,10 @@ pub async fn get_latest_pypi_version(package_name: &str) -> Result<String> {
         let data: PyPiResponse = response.json().await?;
         Ok(data.info.version)
     } else {
-        anyhow::bail!("Failed to fetch PyPI data for {}: {}", package_name, response.status())
+        anyhow::bail!(
+            "Failed to fetch PyPI data for {}: {}",
+            package_name,
+            response.status()
+        )
     }
 }

@@ -20,16 +20,19 @@ cargo install --path .
 ## Usage
 
 ### Check all packages (including transitive dependencies)
+
 ```bash
 pixi-outdated
 ```
 
 ### Check only explicit dependencies from pixi.toml
+
 ```bash
 pixi-outdated --explicit
 ```
 
 ### Check specific packages
+
 ```bash
 # Single package
 pixi-outdated datasette
@@ -39,16 +42,19 @@ pixi-outdated datasette cowsay sqlite
 ```
 
 ### Check packages in a specific environment
+
 ```bash
 pixi-outdated --environment prod
 ```
 
 ### Check packages for a specific platform
+
 ```bash
 pixi-outdated --platform linux-64
 ```
 
 ### Additional options
+
 ```bash
 pixi-outdated --help
 
@@ -86,6 +92,7 @@ This tool is under active development. Current status:
 ## Architecture
 
 Instead of parsing `pixi.toml` and `pixi.lock` directly, we shell out to `pixi list --json` to get package information. This approach:
+
 - Avoids reinventing the wheel
 - Leverages pixi's existing logic for resolving packages
 - Automatically supports all pixi features (environments, platforms, etc.)

@@ -1,3 +1,6 @@
 /target
 Cargo.lock
 *.db
+# pixi environments
+.pixi/*
+!.pixi/config.toml

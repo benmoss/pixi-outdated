@@ -75,11 +75,11 @@ pub fn get_package_list(
         anyhow::bail!("pixi list failed: {}", stderr);
     }
 
-    let stdout = String::from_utf8(output.stdout)
-        .context("pixi list output was not valid UTF-8")?;
+    let stdout =
+        String::from_utf8(output.stdout).context("pixi list output was not valid UTF-8")?;
 
-    let packages: Vec<PixiPackage> = serde_json::from_str(&stdout)
-        .context("Failed to parse JSON output from pixi list")?;
+    let packages: Vec<PixiPackage> =
+        serde_json::from_str(&stdout).context("Failed to parse JSON output from pixi list")?;
 
     Ok(packages)
 }
