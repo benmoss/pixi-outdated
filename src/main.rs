@@ -1,5 +1,13 @@
 use anyhow::Result;
 use clap::Parser;
+use serde::Serialize;
+
+#[derive(Debug, Serialize)]
+struct PackageUpdate {
+    name: String,
+    installed_version: String,
+    latest_version: String,
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -78,7 +86,7 @@ async fn main() -> Result<()> {
 
 async fn run(cli: Cli) -> Result<()> {
     // Step 1: Get package list from `pixi list --json`
-    if cli.verbose {
+    if cli.verbose && !cli.json {
         println!("Fetching package list from pixi...");
     }
 
@@ -90,16 +98,19 @@ async fn run(cli: Cli) -> Result<()> {
         &cli.packages,
     )?;
 
-    if cli.verbose {
+    if cli.verbose && !cli.json {
         println!("Found {} packages\n", packages.len());
     }
 
     // Step 2: Query for latest versions
-    if cli.verbose {
+    if cli.verbose && !cli.json {
         println!("Querying for latest versions...\n");
     }
 
     let platform = cli.platform.as_deref().unwrap_or("osx-arm64"); // TODO: Get from system
+
+    // Collect updates
+    let mut updates: Vec<PackageUpdate> = Vec::new();
 
     for package in &packages {
         match package.kind {
@@ -107,7 +118,7 @@ async fn run(cli: Cli) -> Result<()> {
                 // Extract channel URL from the source
                 if let Some(ref source) = package.source {
                     if let Some(channel_url) = pixi_outdated::conda::extract_channel_url(source) {
-                        if cli.verbose {
+                        if cli.verbose && !cli.json {
                             println!("Checking {} (conda) from {}...", package.name, channel_url);
                         }
 
@@ -120,13 +131,24 @@ async fn run(cli: Cli) -> Result<()> {
                         {
                             Ok(Some(latest)) => {
                                 if latest != package.version {
-                                    println!("{}: {} -> {}", package.name, package.version, latest);
-                                } else if cli.verbose {
+                                    if cli.json {
+                                        updates.push(PackageUpdate {
+                                            name: package.name.clone(),
+                                            installed_version: package.version.clone(),
+                                            latest_version: latest,
+                                        });
+                                    } else {
+                                        println!(
+                                            "{}: {} -> {}",
+                                            package.name, package.version, latest
+                                        );
+                                    }
+                                } else if cli.verbose && !cli.json {
                                     println!("{}: {} (up to date)", package.name, package.version);
                                 }
                             }
                             Ok(None) => {
-                                if cli.verbose {
+                                if cli.verbose && !cli.json {
                                     println!(
                                         "{}: {} (no newer version found)",
                                         package.name, package.version
@@ -134,38 +156,57 @@ async fn run(cli: Cli) -> Result<()> {
                                 }
                             }
                             Err(e) => {
-                                eprintln!("Error checking {}: {}", package.name, e);
+                                if !cli.json {
+                                    eprintln!("Error checking {}: {}", package.name, e);
+                                }
                             }
                         }
-                    } else if cli.verbose {
+                    } else if cli.verbose && !cli.json {
                         println!(
                             "Skipping {} (conda): unable to extract channel URL",
                             package.name
                         );
                     }
-                } else if cli.verbose {
+                } else if cli.verbose && !cli.json {
                     println!("Skipping {} (conda): no source URL", package.name);
                 }
             }
             pixi_outdated::pixi::PackageKind::Pypi => {
-                if cli.verbose {
+                if cli.verbose && !cli.json {
                     println!("Checking {} (PyPI)...", package.name);
                 }
 
                 match pixi_outdated::pypi::get_latest_pypi_version(&package.name).await {
                     Ok(latest) => {
                         if latest != package.version {
-                            println!("{}: {} -> {}", package.name, package.version, latest);
-                        } else if cli.verbose {
+                            if cli.json {
+                                updates.push(PackageUpdate {
+                                    name: package.name.clone(),
+                                    installed_version: package.version.clone(),
+                                    latest_version: latest,
+                                });
+                            } else {
+                                println!("{}: {} -> {}", package.name, package.version, latest);
+                            }
+                        } else if cli.verbose && !cli.json {
                             println!("{}: {} (up to date)", package.name, package.version);
                         }
                     }
                     Err(e) => {
-                        eprintln!("Error checking {}: {}", package.name, e);
+                        if !cli.json {
+                            eprintln!("Error checking {}: {}", package.name, e);
+                        }
                     }
                 }
             }
         }
+    }
+
+    // Output results
+    if cli.json {
+        println!("{}", serde_json::to_string_pretty(&updates)?);
+    } else {
+        println!("\nAnalysis complete!");
     }
 
     Ok(())
