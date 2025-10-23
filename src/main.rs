@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use serde::Serialize;
 
 #[derive(Debug, Serialize, Clone)]
@@ -105,6 +106,13 @@ async fn run(cli: Cli) -> Result<()> {
     let mut platform_updates: std::collections::HashMap<String, Vec<PackageUpdate>> =
         std::collections::HashMap::new();
 
+    // Create multi-progress for showing progress bars (only if not JSON and not verbose)
+    let multi_progress = if !cli.json && !cli.verbose {
+        Some(MultiProgress::new())
+    } else {
+        None
+    };
+
     for platform in &platforms_to_check {
         // Fetch package list for this specific platform
         if cli.verbose && !cli.json {
@@ -139,10 +147,30 @@ async fn run(cli: Cli) -> Result<()> {
             println!("Found {} packages\n", packages.len());
         }
 
+        // Create progress bar for this platform
+        let progress_bar = if let Some(ref mp) = multi_progress {
+            let pb = mp.add(ProgressBar::new(packages.len() as u64));
+            pb.set_style(
+                ProgressStyle::default_bar()
+                    .template("{prefix:.bold.dim} [{bar:40.cyan/blue}] {pos}/{len} {msg}")
+                    .unwrap()
+                    .progress_chars("█▓▒░ "),
+            );
+            pb.set_prefix(format!("{}", platform));
+            Some(pb)
+        } else {
+            None
+        };
+
         // Collect updates for this platform
         let mut platform_package_updates: Vec<PackageUpdate> = Vec::new();
 
         for package in &packages {
+            // Update progress bar message
+            if let Some(ref pb) = progress_bar {
+                pb.set_message(format!("{}", package.name));
+            }
+
             match package.kind {
                 pixi_outdated::pixi::PackageKind::Conda => {
                     // Extract channel URL from the source
@@ -156,13 +184,24 @@ async fn run(cli: Cli) -> Result<()> {
                                 );
                             }
 
-                            match pixi_outdated::conda::get_latest_conda_version(
-                                &package.name,
-                                &channel_url,
-                                platform,
-                            )
-                            .await
-                            {
+                            // If checking multiple platforms, query all platforms at once for efficiency
+                            let latest_result = if check_multiple_platforms {
+                                pixi_outdated::conda::get_latest_conda_version_multi_platform(
+                                    &package.name,
+                                    &channel_url,
+                                    &platforms_to_check,
+                                )
+                                .await
+                            } else {
+                                pixi_outdated::conda::get_latest_conda_version(
+                                    &package.name,
+                                    &channel_url,
+                                    platform,
+                                )
+                                .await
+                            };
+
+                            match latest_result {
                                 Ok(Some(latest)) => {
                                     if latest != package.version {
                                         let update = PackageUpdate {
@@ -228,6 +267,16 @@ async fn run(cli: Cli) -> Result<()> {
                     }
                 }
             }
+
+            // Increment progress bar
+            if let Some(ref pb) = progress_bar {
+                pb.inc(1);
+            }
+        }
+
+        // Finish progress bar
+        if let Some(ref pb) = progress_bar {
+            pb.finish_with_message("Done");
         }
 
         // Store updates for this platform

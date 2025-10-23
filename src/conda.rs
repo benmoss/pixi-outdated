@@ -27,29 +27,34 @@ pub fn extract_channel_url(source: &str) -> Option<String> {
     }
 }
 
-/// Query conda channels for the latest version of a package
-pub async fn get_latest_conda_version(
+/// Query conda channels for the latest version of a package across multiple platforms
+pub async fn get_latest_conda_version_multi_platform(
     package_name: &str,
     channel_url: &str,
-    platform: &str,
+    platforms: &[&str],
 ) -> Result<Option<String>> {
     debug!(
         package = package_name,
         channel = channel_url,
-        platform = platform,
-        "Querying conda package"
+        platforms = ?platforms,
+        "Querying conda package across platforms"
     );
 
     let gateway = &*GATEWAY;
 
-    // Parse the channel and platform
+    // Parse the channel
     let channel_config = ChannelConfig::default_with_root_dir(std::env::current_dir()?);
     let channel = Channel::from_str(channel_url, &channel_config)
         .with_context(|| format!("Invalid channel URL: {}", channel_url))?;
 
-    let plat: Platform = platform
-        .parse()
-        .with_context(|| format!("Invalid platform: {}", platform))?;
+    // Parse all platforms
+    let mut parsed_platforms = vec![Platform::NoArch];
+    for plat_str in platforms {
+        let plat: Platform = plat_str
+            .parse()
+            .with_context(|| format!("Invalid platform: {}", plat_str))?;
+        parsed_platforms.push(plat);
+    }
 
     // Create a match spec for the package (any version)
     let package_name_typed = PackageName::try_from(package_name.to_string())
@@ -73,19 +78,16 @@ pub async fn get_latest_conda_version(
         Some(package_name_typed),
     );
 
-    // Query repodata for both noarch and the specified platform
-    let platforms = vec![Platform::NoArch, plat];
-
     let mut latest_version: Option<VersionWithSource> = None;
 
-    // Query both platforms in a single call for efficiency
+    // Query all platforms in a single call for efficiency
     let start = std::time::Instant::now();
-    debug!(platforms = ?platforms, "Querying repodata");
+    debug!(platforms = ?parsed_platforms, "Querying repodata");
 
     let records = gateway
         .query(
             vec![channel.clone()],
-            platforms.clone(),
+            parsed_platforms.clone(),
             vec![match_spec.clone()],
         )
         .await
@@ -123,4 +125,14 @@ pub async fn get_latest_conda_version(
     }
 
     Ok(latest_version.map(|v| v.version().to_string()))
+}
+
+/// Query conda channels for the latest version of a package
+pub async fn get_latest_conda_version(
+    package_name: &str,
+    channel_url: &str,
+    platform: &str,
+) -> Result<Option<String>> {
+    // Delegate to multi-platform version with a single platform
+    get_latest_conda_version_multi_platform(package_name, channel_url, &[platform]).await
 }
