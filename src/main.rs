@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use serde::Serialize;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 struct PackageUpdate {
     name: String,
     installed_version: String,
@@ -28,7 +28,7 @@ struct Cli {
     #[arg(short = 'e', long)]
     environment: Option<String>,
 
-    /// The platform to check (defaults to the current platform)
+    /// The platform to check (if not specified, checks all common platforms)
     #[arg(short = 'p', long)]
     platform: Option<String>,
 
@@ -86,126 +86,246 @@ async fn main() -> Result<()> {
 
 async fn run(cli: Cli) -> Result<()> {
     // Step 1: Get package list from `pixi list --json`
-    if cli.verbose && !cli.json {
-        println!("Fetching package list from pixi...");
+    // Determine which platforms to check
+    let platforms_to_check: Vec<&str> = if let Some(ref plat) = cli.platform {
+        vec![plat.as_str()]
+    } else {
+        // When no platform is specified, check common platforms
+        // TODO: Parse platforms from pixi.toml instead of hardcoding
+        vec!["linux-64", "osx-64", "osx-arm64", "win-64"]
+    };
+
+    let check_multiple_platforms = cli.platform.is_none();
+
+    if cli.verbose && !cli.json && check_multiple_platforms {
+        println!("Checking platforms: {}\n", platforms_to_check.join(", "));
     }
 
-    let packages = pixi_outdated::pixi::get_package_list(
-        cli.explicit,
-        cli.environment.as_deref(),
-        cli.platform.as_deref(),
-        cli.manifest.as_deref(),
-        &cli.packages,
-    )?;
+    // Track updates per platform (used for both JSON and text output)
+    let mut platform_updates: std::collections::HashMap<String, Vec<PackageUpdate>> =
+        std::collections::HashMap::new();
 
-    if cli.verbose && !cli.json {
-        println!("Found {} packages\n", packages.len());
-    }
+    for platform in &platforms_to_check {
+        // Fetch package list for this specific platform
+        if cli.verbose && !cli.json {
+            println!("Fetching package list for {}...", platform);
+        }
 
-    // Step 2: Query for latest versions
-    if cli.verbose && !cli.json {
-        println!("Querying for latest versions...\n");
-    }
+        let packages = match pixi_outdated::pixi::get_package_list(
+            cli.explicit,
+            cli.environment.as_deref(),
+            Some(platform),
+            cli.manifest.as_deref(),
+            &cli.packages,
+        ) {
+            Ok(pkgs) => pkgs,
+            Err(e) => {
+                // Platform might not be supported, skip it
+                if cli.verbose && !cli.json {
+                    eprintln!("Skipping platform {}: {}", platform, e);
+                }
+                continue;
+            }
+        };
 
-    let platform = cli.platform.as_deref().unwrap_or("osx-arm64"); // TODO: Get from system
+        if packages.is_empty() {
+            if cli.verbose && !cli.json {
+                println!("No packages found for platform {}", platform);
+            }
+            continue;
+        }
 
-    // Collect updates
-    let mut updates: Vec<PackageUpdate> = Vec::new();
+        if cli.verbose && !cli.json {
+            println!("Found {} packages\n", packages.len());
+        }
 
-    for package in &packages {
-        match package.kind {
-            pixi_outdated::pixi::PackageKind::Conda => {
-                // Extract channel URL from the source
-                if let Some(ref source) = package.source {
-                    if let Some(channel_url) = pixi_outdated::conda::extract_channel_url(source) {
-                        if cli.verbose && !cli.json {
-                            println!("Checking {} (conda) from {}...", package.name, channel_url);
-                        }
+        // Collect updates for this platform
+        let mut platform_package_updates: Vec<PackageUpdate> = Vec::new();
 
-                        match pixi_outdated::conda::get_latest_conda_version(
-                            &package.name,
-                            &channel_url,
-                            platform,
-                        )
-                        .await
+        for package in &packages {
+            match package.kind {
+                pixi_outdated::pixi::PackageKind::Conda => {
+                    // Extract channel URL from the source
+                    if let Some(ref source) = package.source {
+                        if let Some(channel_url) = pixi_outdated::conda::extract_channel_url(source)
                         {
-                            Ok(Some(latest)) => {
-                                if latest != package.version {
-                                    if cli.json {
-                                        updates.push(PackageUpdate {
+                            if cli.verbose && !cli.json {
+                                println!(
+                                    "Checking {} (conda) from {}...",
+                                    package.name, channel_url
+                                );
+                            }
+
+                            match pixi_outdated::conda::get_latest_conda_version(
+                                &package.name,
+                                &channel_url,
+                                platform,
+                            )
+                            .await
+                            {
+                                Ok(Some(latest)) => {
+                                    if latest != package.version {
+                                        let update = PackageUpdate {
                                             name: package.name.clone(),
                                             installed_version: package.version.clone(),
                                             latest_version: latest,
-                                        });
-                                    } else {
+                                        };
+                                        platform_package_updates.push(update);
+                                    } else if cli.verbose && !cli.json {
                                         println!(
-                                            "{}: {} -> {}",
-                                            package.name, package.version, latest
+                                            "{}: {} (up to date)",
+                                            package.name, package.version
                                         );
                                     }
-                                } else if cli.verbose && !cli.json {
-                                    println!("{}: {} (up to date)", package.name, package.version);
+                                }
+                                Ok(None) => {
+                                    if cli.verbose && !cli.json {
+                                        println!(
+                                            "{}: {} (no newer version found)",
+                                            package.name, package.version
+                                        );
+                                    }
+                                }
+                                Err(e) => {
+                                    if !cli.json {
+                                        eprintln!("Error checking {}: {}", package.name, e);
+                                    }
                                 }
                             }
-                            Ok(None) => {
-                                if cli.verbose && !cli.json {
-                                    println!(
-                                        "{}: {} (no newer version found)",
-                                        package.name, package.version
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                if !cli.json {
-                                    eprintln!("Error checking {}: {}", package.name, e);
-                                }
-                            }
+                        } else if cli.verbose && !cli.json {
+                            println!(
+                                "Skipping {} (conda): unable to extract channel URL",
+                                package.name
+                            );
                         }
                     } else if cli.verbose && !cli.json {
-                        println!(
-                            "Skipping {} (conda): unable to extract channel URL",
-                            package.name
-                        );
+                        println!("Skipping {} (conda): no source URL", package.name);
                     }
-                } else if cli.verbose && !cli.json {
-                    println!("Skipping {} (conda): no source URL", package.name);
                 }
-            }
-            pixi_outdated::pixi::PackageKind::Pypi => {
-                if cli.verbose && !cli.json {
-                    println!("Checking {} (PyPI)...", package.name);
-                }
+                pixi_outdated::pixi::PackageKind::Pypi => {
+                    if cli.verbose && !cli.json {
+                        println!("Checking {} (PyPI)...", package.name);
+                    }
 
-                match pixi_outdated::pypi::get_latest_pypi_version(&package.name).await {
-                    Ok(latest) => {
-                        if latest != package.version {
-                            if cli.json {
-                                updates.push(PackageUpdate {
+                    match pixi_outdated::pypi::get_latest_pypi_version(&package.name).await {
+                        Ok(latest) => {
+                            if latest != package.version {
+                                let update = PackageUpdate {
                                     name: package.name.clone(),
                                     installed_version: package.version.clone(),
                                     latest_version: latest,
-                                });
-                            } else {
-                                println!("{}: {} -> {}", package.name, package.version, latest);
+                                };
+                                platform_package_updates.push(update);
+                            } else if cli.verbose && !cli.json {
+                                println!("{}: {} (up to date)", package.name, package.version);
                             }
-                        } else if cli.verbose && !cli.json {
-                            println!("{}: {} (up to date)", package.name, package.version);
                         }
-                    }
-                    Err(e) => {
-                        if !cli.json {
-                            eprintln!("Error checking {}: {}", package.name, e);
+                        Err(e) => {
+                            if !cli.json {
+                                eprintln!("Error checking {}: {}", package.name, e);
+                            }
                         }
                     }
                 }
             }
         }
+
+        // Store updates for this platform
+        platform_updates.insert(platform.to_string(), platform_package_updates);
     }
 
     // Output results
     if cli.json {
-        println!("{}", serde_json::to_string_pretty(&updates)?);
+        // JSON output: grouped by platform
+        println!("{}", serde_json::to_string_pretty(&platform_updates)?);
+    } else if check_multiple_platforms {
+        // Coalesce updates: find packages that have the same update across ALL platforms
+        let mut common_updates: Vec<PackageUpdate> = Vec::new();
+        let mut platform_specific_updates: std::collections::HashMap<String, Vec<PackageUpdate>> =
+            std::collections::HashMap::new();
+
+        if !platform_updates.is_empty() {
+            // Get the first platform's updates as candidates for common updates
+            let platforms: Vec<String> = platform_updates.keys().cloned().collect();
+
+            if let Some(first_platform) = platforms.first() {
+                if let Some(first_updates) = platform_updates.get(first_platform) {
+                    for update in first_updates {
+                        // Check if this exact update exists in all other platforms
+                        let is_common = platforms.iter().skip(1).all(|plat| {
+                            platform_updates.get(plat).map_or(false, |updates| {
+                                updates.iter().any(|u| {
+                                    u.name == update.name
+                                        && u.installed_version == update.installed_version
+                                        && u.latest_version == update.latest_version
+                                })
+                            })
+                        });
+
+                        if is_common && platforms.len() > 1 {
+                            common_updates.push(update.clone());
+                        }
+                    }
+                }
+            }
+
+            // Now collect platform-specific updates (excluding common ones)
+            for (platform, updates) in &platform_updates {
+                let specific: Vec<PackageUpdate> = updates
+                    .iter()
+                    .filter(|update| {
+                        !common_updates.iter().any(|common| {
+                            common.name == update.name
+                                && common.installed_version == update.installed_version
+                                && common.latest_version == update.latest_version
+                        })
+                    })
+                    .cloned()
+                    .collect();
+
+                if !specific.is_empty() {
+                    platform_specific_updates.insert(platform.clone(), specific);
+                }
+            }
+        }
+
+        // Print common updates first
+        if !common_updates.is_empty() {
+            println!("\n=== All Platforms ===");
+            for update in &common_updates {
+                println!(
+                    "{}: {} -> {}",
+                    update.name, update.installed_version, update.latest_version
+                );
+            }
+        }
+
+        // Print platform-specific updates
+        for platform in platforms_to_check {
+            if let Some(updates) = platform_specific_updates.get(&platform.to_string()) {
+                if !updates.is_empty() {
+                    println!("\n=== Platform: {} ===", platform);
+                    for update in updates {
+                        println!(
+                            "{}: {} -> {}",
+                            update.name, update.installed_version, update.latest_version
+                        );
+                    }
+                }
+            }
+        }
+
+        println!("\nAnalysis complete!");
     } else {
+        // Single platform output
+        if let Some(updates) = platform_updates.values().next() {
+            for update in updates {
+                println!(
+                    "{}: {} -> {}",
+                    update.name, update.installed_version, update.latest_version
+                );
+            }
+        }
         println!("\nAnalysis complete!");
     }
 
