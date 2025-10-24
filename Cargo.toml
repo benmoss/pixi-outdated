@@ -20,11 +20,11 @@ url = "2.5"
 
 # Rattler for conda package management
 rattler_conda_types = "0.40"
+rattler_lock = "0.25"
 rattler_repodata_gateway = { version = "0.24", features = [
   "gateway",
   "sparse",
 ] }
-rattler_lock = "0.25"
 
 # Error handling
 anyhow = "1.0"
