@@ -64,10 +64,12 @@ mod tests {
         let result = get_platforms_from_lockfile(Some("examples/pixi.toml"), Some("nonexistent"));
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Environment 'nonexistent' not found"));
+        let error_msg = result.unwrap_err().to_string();
+        assert!(
+            error_msg.contains("Environment 'nonexistent' not found"),
+            "Expected error message to contain \"Environment 'nonexistent' not found\", but got: {}",
+            error_msg
+        );
     }
 
     #[test]

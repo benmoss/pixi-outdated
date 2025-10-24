@@ -2,6 +2,7 @@
 name = "pixi-outdated"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 
 [dependencies]
 # CLI and async
@@ -15,16 +16,19 @@ serde_yaml = "0.9"
 toml = "0.9"
 
 # HTTP and networking
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", default-features = false, features = [
+  "json",
+  "rustls-tls",
+] }
 url = "2.5"
 
 # Rattler for conda package management
 rattler_conda_types = "0.40"
+rattler_lock = "0.25"
 rattler_repodata_gateway = { version = "0.24", features = [
   "gateway",
   "sparse",
 ] }
-rattler_lock = "0.25"
 
 # Error handling
 anyhow = "1.0"

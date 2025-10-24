@@ -61,6 +61,7 @@ pixi-outdated
 ```
 
 **Note:** When no platform is specified, `pixi-outdated` automatically checks all platforms defined in your `pixi.lock` file and shows:
+
 - Updates common to all platforms
 - Platform-specific updates
 
@@ -109,6 +110,7 @@ Analysis complete!
 ✅ **Production Ready!** This tool is fully functional and well-tested.
 
 **Completed Features:**
+
 - [x] **Multi-platform analysis** - Automatically checks all platforms in lockfile
 - [x] **Smart query optimization** - Each package queried only once across platforms (50% reduction in API calls)
 - [x] **CLI argument parsing** with support for:
@@ -132,6 +134,7 @@ Analysis complete!
 - [x] **Result coalescing** - Intelligently groups updates by platform
 
 **Performance:**
+
 - ~50% reduction in API calls through intelligent caching
 - PyPI packages queried once regardless of platform count
 - Parallel platform analysis with single progress bar
