@@ -45,10 +45,18 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
+    fn get_example_manifest_path() -> String {
+        // Get the path to the example manifest relative to the project root
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+            .expect("CARGO_MANIFEST_DIR should be set during tests");
+        format!("{}/examples/pixi.toml", manifest_dir)
+    }
+
     #[test]
     fn test_get_platforms_from_example_project() {
         // Test with the actual example project
-        let result = get_platforms_from_lockfile(Some("examples/pixi.toml"), None);
+        let manifest_path = get_example_manifest_path();
+        let result = get_platforms_from_lockfile(Some(&manifest_path), None);
 
         assert!(result.is_ok());
         let platforms = result.unwrap();
@@ -61,7 +69,8 @@ mod tests {
     #[test]
     fn test_get_platforms_missing_env() {
         // Use the example project but request a non-existent environment
-        let result = get_platforms_from_lockfile(Some("examples/pixi.toml"), Some("nonexistent"));
+        let manifest_path = get_example_manifest_path();
+        let result = get_platforms_from_lockfile(Some(&manifest_path), Some("nonexistent"));
 
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
