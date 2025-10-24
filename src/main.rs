@@ -144,15 +144,13 @@ async fn run(cli: Cli) -> Result<()> {
     let mut platform_updates: std::collections::HashMap<String, Vec<PackageUpdate>> =
         std::collections::HashMap::new();
 
-    // Create multi-progress for showing progress bars (only if not JSON and not verbose)
-    let multi_progress = if !cli.json && !cli.verbose {
-        Some(MultiProgress::new())
-    } else {
-        None
-    };
+    // Collect all packages from all platforms first
+    let mut platform_packages: std::collections::HashMap<
+        String,
+        Vec<pixi_outdated::pixi::PixiPackage>,
+    > = std::collections::HashMap::new();
 
     for platform in &platforms_to_check {
-        // Fetch package list for this specific platform
         if cli.verbose && !cli.json {
             println!("Fetching package list for {}...", platform);
         }
@@ -185,142 +183,179 @@ async fn run(cli: Cli) -> Result<()> {
             println!("Found {} packages\n", packages.len());
         }
 
-        // Create progress bar for this platform
-        let progress_bar = if let Some(ref mp) = multi_progress {
-            let pb = mp.add(ProgressBar::new(packages.len() as u64));
-            pb.set_style(
-                ProgressStyle::default_bar()
-                    .template("{prefix:.bold.dim} [{bar:40.cyan/blue}] {pos}/{len} {msg}")
-                    .unwrap()
-                    .progress_chars("█▓▒░ "),
-            );
-            pb.set_prefix(platform.to_string());
-            Some(pb)
-        } else {
-            None
-        };
+        platform_packages.insert(platform.clone(), packages);
+    }
 
-        // Collect updates for this platform
-        let mut platform_package_updates: Vec<PackageUpdate> = Vec::new();
+    if platform_packages.is_empty() {
+        if !cli.json {
+            println!("No packages found for any platform");
+        }
+        return Ok(());
+    }
 
-        for package in &packages {
-            // Update progress bar message
-            if let Some(ref pb) = progress_bar {
-                pb.set_message(package.name.to_string());
-            }
+    // Build a unique set of packages to check (package name + channel)
+    #[derive(Hash, Eq, PartialEq, Clone)]
+    struct PackageKey {
+        name: String,
+        channel: Option<String>,
+        kind: pixi_outdated::pixi::PackageKind,
+    }
 
-            match package.kind {
-                pixi_outdated::pixi::PackageKind::Conda => {
-                    // Extract channel URL from the source
-                    if let Some(ref source) = package.source {
-                        if let Some(channel_url) = pixi_outdated::conda::extract_channel_url(source)
-                        {
-                            if cli.verbose && !cli.json {
-                                println!(
-                                    "Checking {} (conda) from {}...",
-                                    package.name, channel_url
-                                );
-                            }
+    let mut unique_packages: std::collections::HashMap<PackageKey, String> =
+        std::collections::HashMap::new();
 
-                            // If checking multiple platforms, query all platforms at once for efficiency
-                            let latest_result = if check_multiple_platforms {
-                                let platform_refs: Vec<&str> =
-                                    platforms_to_check.iter().map(|s| s.as_str()).collect();
-                                pixi_outdated::conda::get_latest_conda_version_multi_platform(
-                                    &package.name,
-                                    &channel_url,
-                                    &platform_refs,
-                                )
-                                .await
-                            } else {
-                                pixi_outdated::conda::get_latest_conda_version(
-                                    &package.name,
-                                    &channel_url,
-                                    platform.as_str(),
-                                )
-                                .await
-                            };
+    // Collect unique packages across all platforms
+    for packages in platform_packages.values() {
+        for package in packages {
+            let channel = package
+                .source
+                .as_ref()
+                .and_then(|s| pixi_outdated::conda::extract_channel_url(s));
 
-                            match latest_result {
-                                Ok(Some(latest)) => {
-                                    if latest != package.version {
-                                        let update = PackageUpdate {
-                                            name: package.name.clone(),
-                                            installed_version: package.version.clone(),
-                                            latest_version: latest,
-                                        };
-                                        platform_package_updates.push(update);
-                                    } else if cli.verbose && !cli.json {
-                                        println!(
-                                            "{}: {} (up to date)",
-                                            package.name, package.version
-                                        );
-                                    }
-                                }
-                                Ok(None) => {
-                                    if cli.verbose && !cli.json {
-                                        println!(
-                                            "{}: {} (no newer version found)",
-                                            package.name, package.version
-                                        );
-                                    }
-                                }
-                                Err(e) => {
-                                    if !cli.json {
-                                        eprintln!("Error checking {}: {}", package.name, e);
-                                    }
-                                }
-                            }
-                        } else if cli.verbose && !cli.json {
-                            println!(
-                                "Skipping {} (conda): unable to extract channel URL",
-                                package.name
-                            );
-                        }
-                    } else if cli.verbose && !cli.json {
-                        println!("Skipping {} (conda): no source URL", package.name);
-                    }
-                }
-                pixi_outdated::pixi::PackageKind::Pypi => {
+            let key = PackageKey {
+                name: package.name.clone(),
+                channel: channel.clone(),
+                kind: package.kind,
+            };
+
+            // Store the first version we see (they might differ per platform)
+            unique_packages
+                .entry(key)
+                .or_insert(package.version.clone());
+        }
+    }
+
+    // Create multi-progress for showing progress bars (only if not JSON and not verbose)
+    let multi_progress = if !cli.json && !cli.verbose {
+        Some(MultiProgress::new())
+    } else {
+        None
+    };
+
+    let progress_bar = if let Some(ref mp) = multi_progress {
+        let pb = mp.add(ProgressBar::new(unique_packages.len() as u64));
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{prefix:.bold.dim} [{bar:40.cyan/blue}] {pos}/{len} {msg}")
+                .expect("Invalid progress bar template")
+                .progress_chars("█▓▒░ "),
+        );
+        pb.set_prefix("Checking".to_string());
+        Some(pb)
+    } else {
+        None
+    };
+
+    // Cache for version queries (package_key -> latest_version)
+    let mut version_cache: std::collections::HashMap<PackageKey, Option<String>> =
+        std::collections::HashMap::new();
+
+    // Query each unique package once
+    for (key, _version) in &unique_packages {
+        if let Some(ref pb) = progress_bar {
+            pb.set_message(key.name.clone());
+        }
+
+        match key.kind {
+            pixi_outdated::pixi::PackageKind::Conda => {
+                if let Some(ref channel_url) = key.channel {
                     if cli.verbose && !cli.json {
-                        println!("Checking {} (PyPI)...", package.name);
+                        println!("Checking {} (conda) from {}...", key.name, channel_url);
                     }
 
-                    match pixi_outdated::pypi::get_latest_pypi_version(&package.name).await {
+                    // Query all platforms at once for efficiency
+                    let platform_refs: Vec<&str> =
+                        platforms_to_check.iter().map(|s| s.as_str()).collect();
+                    let latest_result =
+                        pixi_outdated::conda::get_latest_conda_version_multi_platform(
+                            &key.name,
+                            channel_url,
+                            &platform_refs,
+                        )
+                        .await;
+
+                    match latest_result {
                         Ok(latest) => {
-                            if latest != package.version {
-                                let update = PackageUpdate {
-                                    name: package.name.clone(),
-                                    installed_version: package.version.clone(),
-                                    latest_version: latest,
-                                };
-                                platform_package_updates.push(update);
-                            } else if cli.verbose && !cli.json {
-                                println!("{}: {} (up to date)", package.name, package.version);
-                            }
+                            version_cache.insert(key.clone(), latest);
                         }
                         Err(e) => {
                             if !cli.json {
-                                eprintln!("Error checking {}: {}", package.name, e);
+                                eprintln!("Error checking {}: {}", key.name, e);
                             }
+                            version_cache.insert(key.clone(), None);
                         }
+                    }
+                } else if cli.verbose && !cli.json {
+                    println!(
+                        "Skipping {} (conda): unable to extract channel URL",
+                        key.name
+                    );
+                }
+            }
+            pixi_outdated::pixi::PackageKind::Pypi => {
+                if cli.verbose && !cli.json {
+                    println!("Checking {} (PyPI)...", key.name);
+                }
+
+                match pixi_outdated::pypi::get_latest_pypi_version(&key.name).await {
+                    Ok(latest) => {
+                        version_cache.insert(key.clone(), Some(latest));
+                    }
+                    Err(e) => {
+                        if !cli.json {
+                            eprintln!("Error checking {}: {}", key.name, e);
+                        }
+                        version_cache.insert(key.clone(), None);
                     }
                 }
             }
+        }
 
-            // Increment progress bar
-            if let Some(ref pb) = progress_bar {
-                pb.inc(1);
+        if let Some(ref pb) = progress_bar {
+            pb.inc(1);
+        }
+    }
+
+    if let Some(ref pb) = progress_bar {
+        pb.finish_with_message("Done");
+    }
+
+    // Now build updates per platform using the cached results
+    for (platform, packages) in &platform_packages {
+        let mut platform_package_updates: Vec<PackageUpdate> = Vec::new();
+
+        for package in packages {
+            let channel = package
+                .source
+                .as_ref()
+                .and_then(|s| pixi_outdated::conda::extract_channel_url(s));
+
+            let key = PackageKey {
+                name: package.name.clone(),
+                channel,
+                kind: package.kind,
+            };
+
+            if let Some(Some(latest)) = version_cache.get(&key) {
+                if latest != &package.version {
+                    let update = PackageUpdate {
+                        name: package.name.clone(),
+                        installed_version: package.version.clone(),
+                        latest_version: latest.clone(),
+                    };
+                    platform_package_updates.push(update);
+                } else if cli.verbose && !cli.json {
+                    println!("{}: {} (up to date)", package.name, package.version);
+                }
+            } else if cli.verbose && !cli.json {
+                println!(
+                    "{}: {} (no newer version found)",
+                    package.name, package.version
+                );
             }
         }
 
-        // Finish progress bar
-        if let Some(ref pb) = progress_bar {
-            pb.finish_with_message("Done");
-        }
-
-        // Store updates for this platform
-        platform_updates.insert(platform.to_string(), platform_package_updates);
+        platform_updates.insert(platform.clone(), platform_package_updates);
     }
 
     // Output results

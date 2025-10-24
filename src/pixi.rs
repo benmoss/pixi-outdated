@@ -16,7 +16,7 @@ pub struct PixiPackage {
     pub is_explicit: bool,
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum PackageKind {
     Conda,
