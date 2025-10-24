@@ -9,8 +9,6 @@ version = "0.1.0"
 
 [dependencies]
 rust = ">=1.90.0,<1.91"
-openssl = ">=3.0.0,<4"
-pkg-config = ">=0.29.2,<1"
 
 [feature.lint.dependencies]
 basedpyright = ">=1.31.4,<2"
