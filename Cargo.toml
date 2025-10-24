@@ -3,6 +3,7 @@ name = "pixi-outdated"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+description = "A CLI tool to find outdated packages in pixi environments"
 
 [dependencies]
 # CLI and async
