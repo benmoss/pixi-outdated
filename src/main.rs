@@ -1,11 +1,9 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::Parser;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use rattler_lock::LockFile;
 use serde::Serialize;
-use std::path::Path;
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, serde::Deserialize)]
 struct PackageUpdate {
     name: String,
     installed_version: String,
@@ -87,42 +85,8 @@ async fn main() -> Result<()> {
     run(cli).await
 }
 
-/// Read platforms from the pixi.lock file for a specific environment
-fn get_platforms_from_lockfile(
-    manifest_path: Option<&str>,
-    environment: Option<&str>,
-) -> Result<Vec<String>> {
-    // Find the lockfile path
-    let lockfile_path = if let Some(manifest) = manifest_path {
-        let manifest_dir = Path::new(manifest)
-            .parent()
-            .context("Failed to get manifest directory")?;
-        manifest_dir.join("pixi.lock")
-    } else {
-        Path::new("pixi.lock").to_path_buf()
-    };
-
-    // Read the lockfile
-    let lockfile = LockFile::from_path(&lockfile_path)
-        .with_context(|| format!("Failed to read lockfile at {}", lockfile_path.display()))?;
-
-    // Find the specified environment (or use default)
-    let env_name = environment.unwrap_or("default");
-
-    let (_name, env) = lockfile
-        .environments()
-        .find(|(name, _env)| *name == env_name)
-        .with_context(|| format!("Environment '{}' not found in lockfile", env_name))?;
-
-    // Extract platforms from the environment
-    let platforms: Vec<String> = env.platforms().map(|p| p.to_string()).collect();
-
-    if platforms.is_empty() {
-        anyhow::bail!("No platforms found for environment '{}'", env_name);
-    }
-
-    Ok(platforms)
-}
+// Use the library function for getting platforms from lockfile
+use pixi_outdated::get_platforms_from_lockfile;
 
 async fn run(cli: Cli) -> Result<()> {
     // Step 1: Get package list from `pixi list --json`
@@ -454,4 +418,79 @@ async fn run(cli: Cli) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_package_key_uniqueness() {
+        use std::collections::HashMap;
+
+        #[derive(Hash, Eq, PartialEq, Clone)]
+        struct PackageKey {
+            name: String,
+            channel: Option<String>,
+            kind: pixi_outdated::pixi::PackageKind,
+        }
+
+        let mut map: HashMap<PackageKey, String> = HashMap::new();
+
+        // Same package, same channel, same kind - should be same key
+        let key1 = PackageKey {
+            name: "python".to_string(),
+            channel: Some("https://conda.anaconda.org/conda-forge/".to_string()),
+            kind: pixi_outdated::pixi::PackageKind::Conda,
+        };
+        let key2 = PackageKey {
+            name: "python".to_string(),
+            channel: Some("https://conda.anaconda.org/conda-forge/".to_string()),
+            kind: pixi_outdated::pixi::PackageKind::Conda,
+        };
+
+        map.insert(key1, "3.12.0".to_string());
+        map.insert(key2, "3.12.1".to_string());
+
+        // Should only have one entry (keys are equal)
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.values().next().unwrap(), "3.12.1");
+
+        // Different channel - should be different key
+        let key3 = PackageKey {
+            name: "python".to_string(),
+            channel: Some("https://conda.anaconda.org/main/".to_string()),
+            kind: pixi_outdated::pixi::PackageKind::Conda,
+        };
+        map.insert(key3, "3.11.0".to_string());
+        assert_eq!(map.len(), 2);
+
+        // PyPI package (no channel) - should be different from conda
+        let key4 = PackageKey {
+            name: "python".to_string(),
+            channel: None,
+            kind: pixi_outdated::pixi::PackageKind::Pypi,
+        };
+        map.insert(key4, "3.13.0".to_string());
+        assert_eq!(map.len(), 3);
+    }
+
+    #[test]
+    fn test_package_update_serialization() {
+        let update = PackageUpdate {
+            name: "python".to_string(),
+            installed_version: "3.12.0".to_string(),
+            latest_version: "3.13.0".to_string(),
+        };
+
+        let json = serde_json::to_string(&update).unwrap();
+        assert!(json.contains("python"));
+        assert!(json.contains("3.12.0"));
+        assert!(json.contains("3.13.0"));
+
+        let deserialized: PackageUpdate = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.name, update.name);
+        assert_eq!(deserialized.installed_version, update.installed_version);
+        assert_eq!(deserialized.latest_version, update.latest_version);
+    }
 }
