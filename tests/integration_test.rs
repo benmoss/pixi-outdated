@@ -115,7 +115,7 @@ fn test_platforms_are_valid_platform_strings() {
     let platforms = result.unwrap();
 
     // All platforms should be valid platform identifiers
-    let valid_platforms = vec![
+    let valid_platforms = [
         "linux-64",
         "osx-64",
         "osx-arm64",

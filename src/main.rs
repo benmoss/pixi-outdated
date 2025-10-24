@@ -215,7 +215,7 @@ async fn run(cli: Cli) -> Result<()> {
         std::collections::HashMap::new();
 
     // Query each unique package once
-    for (key, _version) in &unique_packages {
+    for key in unique_packages.keys() {
         if let Some(ref pb) = progress_bar {
             pb.set_message(key.name.clone());
         }
