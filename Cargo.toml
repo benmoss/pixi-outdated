@@ -24,6 +24,7 @@ rattler_repodata_gateway = { version = "0.24", features = [
   "gateway",
   "sparse",
 ] }
+rattler_lock = "0.25"
 
 # Error handling
 anyhow = "1.0"

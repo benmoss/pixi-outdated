@@ -1,7 +1,9 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use rattler_lock::LockFile;
 use serde::Serialize;
+use std::path::Path;
 
 #[derive(Debug, Serialize, Clone)]
 struct PackageUpdate {
@@ -85,15 +87,51 @@ async fn main() -> Result<()> {
     run(cli).await
 }
 
+/// Read platforms from the pixi.lock file for a specific environment
+fn get_platforms_from_lockfile(
+    manifest_path: Option<&str>,
+    environment: Option<&str>,
+) -> Result<Vec<String>> {
+    // Find the lockfile path
+    let lockfile_path = if let Some(manifest) = manifest_path {
+        let manifest_dir = Path::new(manifest)
+            .parent()
+            .context("Failed to get manifest directory")?;
+        manifest_dir.join("pixi.lock")
+    } else {
+        Path::new("pixi.lock").to_path_buf()
+    };
+
+    // Read the lockfile
+    let lockfile = LockFile::from_path(&lockfile_path)
+        .with_context(|| format!("Failed to read lockfile at {}", lockfile_path.display()))?;
+
+    // Find the specified environment (or use default)
+    let env_name = environment.unwrap_or("default");
+
+    let (_name, env) = lockfile
+        .environments()
+        .find(|(name, _env)| *name == env_name)
+        .with_context(|| format!("Environment '{}' not found in lockfile", env_name))?;
+
+    // Extract platforms from the environment
+    let platforms: Vec<String> = env.platforms().map(|p| p.to_string()).collect();
+
+    if platforms.is_empty() {
+        anyhow::bail!("No platforms found for environment '{}'", env_name);
+    }
+
+    Ok(platforms)
+}
+
 async fn run(cli: Cli) -> Result<()> {
     // Step 1: Get package list from `pixi list --json`
     // Determine which platforms to check
-    let platforms_to_check: Vec<&str> = if let Some(ref plat) = cli.platform {
-        vec![plat.as_str()]
+    let platforms_to_check: Vec<String> = if let Some(ref plat) = cli.platform {
+        vec![plat.clone()]
     } else {
-        // When no platform is specified, check common platforms
-        // TODO: Parse platforms from pixi.toml instead of hardcoding
-        vec!["linux-64", "osx-64", "osx-arm64", "win-64"]
+        // When no platform is specified, read platforms from lockfile for the specified environment
+        get_platforms_from_lockfile(cli.manifest.as_deref(), cli.environment.as_deref())?
     };
 
     let check_multiple_platforms = cli.platform.is_none();
@@ -122,7 +160,7 @@ async fn run(cli: Cli) -> Result<()> {
         let packages = match pixi_outdated::pixi::get_package_list(
             cli.explicit,
             cli.environment.as_deref(),
-            Some(platform),
+            Some(platform.as_str()),
             cli.manifest.as_deref(),
             &cli.packages,
         ) {
@@ -186,17 +224,19 @@ async fn run(cli: Cli) -> Result<()> {
 
                             // If checking multiple platforms, query all platforms at once for efficiency
                             let latest_result = if check_multiple_platforms {
+                                let platform_refs: Vec<&str> =
+                                    platforms_to_check.iter().map(|s| s.as_str()).collect();
                                 pixi_outdated::conda::get_latest_conda_version_multi_platform(
                                     &package.name,
                                     &channel_url,
-                                    &platforms_to_check,
+                                    &platform_refs,
                                 )
                                 .await
                             } else {
                                 pixi_outdated::conda::get_latest_conda_version(
                                     &package.name,
                                     &channel_url,
-                                    platform,
+                                    platform.as_str(),
                                 )
                                 .await
                             };
@@ -350,8 +390,8 @@ async fn run(cli: Cli) -> Result<()> {
         }
 
         // Print platform-specific updates
-        for platform in platforms_to_check {
-            if let Some(updates) = platform_specific_updates.get(&platform.to_string()) {
+        for platform in &platforms_to_check {
+            if let Some(updates) = platform_specific_updates.get(platform) {
                 if !updates.is_empty() {
                     println!("\n=== Platform: {} ===", platform);
                     for update in updates {
