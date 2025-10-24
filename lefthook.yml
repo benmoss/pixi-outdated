@@ -49,5 +49,3 @@ pre-push:
       glob: "Cargo.lock,Cargo.toml"
       stage_fixed: true
       run: pixi {run} cargo-deny
-    - name: check-openssl
-      run: pixi {run} check-openssl

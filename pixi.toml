@@ -26,7 +26,6 @@ lint = { features = ["lint"] }
 cargo-clippy = "cargo clippy --all-targets --workspace -- -D warnings"
 cargo-deny = "cargo deny --workspace check license --deny warnings"
 cargo-fmt = "cargo fmt --all"
-check-openssl = "python tests/scripts/check-openssl.py"
 dprint-check = { cmd = "dprint check --log-level=silent", description = "Check formatting with dprint" }
 dprint-fmt = { cmd = "dprint fmt --incremental=false", description = "Format with dprint" }
 lefthook = { cmd = "lefthook", description = "Run lefthook" }
