@@ -194,7 +194,7 @@ async fn run(cli: Cli) -> Result<()> {
                     .unwrap()
                     .progress_chars("█▓▒░ "),
             );
-            pb.set_prefix(format!("{}", platform));
+            pb.set_prefix(platform.to_string());
             Some(pb)
         } else {
             None
@@ -206,7 +206,7 @@ async fn run(cli: Cli) -> Result<()> {
         for package in &packages {
             // Update progress bar message
             if let Some(ref pb) = progress_bar {
-                pb.set_message(format!("{}", package.name));
+                pb.set_message(package.name.to_string());
             }
 
             match package.kind {
@@ -342,7 +342,7 @@ async fn run(cli: Cli) -> Result<()> {
                     for update in first_updates {
                         // Check if this exact update exists in all other platforms
                         let is_common = platforms.iter().skip(1).all(|plat| {
-                            platform_updates.get(plat).map_or(false, |updates| {
+                            platform_updates.get(plat).is_some_and(|updates| {
                                 updates.iter().any(|u| {
                                     u.name == update.name
                                         && u.installed_version == update.installed_version
