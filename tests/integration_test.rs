@@ -1,11 +1,20 @@
 use std::fs;
+use std::path::PathBuf;
 use tempfile::TempDir;
+
+/// Helper to get the path to the examples directory
+fn get_example_path(file: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join(file)
+}
 
 /// Test with the actual example project in the repository
 #[test]
 fn test_with_real_example_project() {
-    // This assumes we're running from the project root
-    let result = pixi_outdated::get_platforms_from_lockfile(Some("examples/pixi.toml"), None);
+    let example_toml = get_example_path("pixi.toml");
+    let result =
+        pixi_outdated::get_platforms_from_lockfile(Some(example_toml.to_str().unwrap()), None);
 
     // Should succeed
     assert!(
@@ -69,8 +78,9 @@ fn test_error_invalid_lockfile_format() {
 #[test]
 fn test_error_missing_environment() {
     // Use the example project but request a non-existent environment
+    let example_toml = get_example_path("pixi.toml");
     let result = pixi_outdated::get_platforms_from_lockfile(
-        Some("examples/pixi.toml"),
+        Some(example_toml.to_str().unwrap()),
         Some("does-not-exist"),
     );
 
@@ -85,7 +95,8 @@ fn test_lockfile_without_manifest_path() {
     let temp_dir = TempDir::new().unwrap();
 
     // Copy the example lockfile to the temp directory
-    let example_lock = fs::read_to_string("examples/pixi.lock").unwrap();
+    let example_lock_path = get_example_path("pixi.lock");
+    let example_lock = fs::read_to_string(example_lock_path).unwrap();
     fs::write(temp_dir.path().join("pixi.lock"), example_lock).unwrap();
 
     // Change to the project directory
@@ -109,7 +120,9 @@ fn test_lockfile_without_manifest_path() {
 
 #[test]
 fn test_platforms_are_valid_platform_strings() {
-    let result = pixi_outdated::get_platforms_from_lockfile(Some("examples/pixi.toml"), None);
+    let example_toml = get_example_path("pixi.toml");
+    let result =
+        pixi_outdated::get_platforms_from_lockfile(Some(example_toml.to_str().unwrap()), None);
     assert!(result.is_ok());
 
     let platforms = result.unwrap();
