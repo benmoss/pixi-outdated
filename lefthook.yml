@@ -45,7 +45,3 @@ pre-push:
     - name: cargo-clippy
       glob: "*.rs"
       run: pixi {run} cargo-clippy
-    - name: cargo-deny
-      glob: "Cargo.lock,Cargo.toml"
-      stage_fixed: true
-      run: pixi {run} cargo-deny
