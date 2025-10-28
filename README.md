@@ -71,19 +71,13 @@ cowsay: 5.0 -> 6.1
 libffi: 3.4.6 -> 3.5.2
 
 === Platform: osx-arm64 ===
- icu: 73.2 -> 75.1
+icu: 73.2 -> 75.1
 python: 3.12.12 -> 3.14.0
 
 === Platform: linux-64 ===
 libsqlite: 3.50.1 -> 3.50.4
 python: 3.12.11 -> 3.14.0
-
-Analysis complete!
 ```
-
-## How it Works
-
-The tool uses `pixi list --json` to get package information and queries conda channels (via rattler) and PyPI to find the latest versions. Packages are queried once across all platforms and results are cached.
 
 ## Testing
 

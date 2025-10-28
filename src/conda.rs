@@ -1,14 +1,10 @@
 use anyhow::{Context, Result};
-use once_cell::sync::Lazy;
 use rattler_conda_types::{
     Channel, ChannelConfig, MatchSpec, PackageName, Platform, VersionWithSource,
 };
 use rattler_repodata_gateway::Gateway;
 use tracing::{debug, info};
 use url::Url;
-
-/// Global gateway instance that can be reused across queries
-static GATEWAY: Lazy<Gateway> = Lazy::new(|| Gateway::builder().finish());
 
 /// Extract the channel URL from a conda package source
 /// Example: "https://conda.anaconda.org/conda-forge/" from package source
@@ -29,6 +25,7 @@ pub fn extract_channel_url(source: &str) -> Option<String> {
 
 /// Query conda channels for the latest version of a package across multiple platforms
 pub async fn get_latest_conda_version_multi_platform(
+    gateway: &Gateway,
     package_name: &str,
     channel_url: &str,
     platforms: &[&str],
@@ -39,8 +36,6 @@ pub async fn get_latest_conda_version_multi_platform(
         platforms = ?platforms,
         "Querying conda package across platforms"
     );
-
-    let gateway = &*GATEWAY;
 
     // Parse the channel
     let channel_config = ChannelConfig::default_with_root_dir(std::env::current_dir()?);
@@ -129,12 +124,13 @@ pub async fn get_latest_conda_version_multi_platform(
 
 /// Query conda channels for the latest version of a package
 pub async fn get_latest_conda_version(
+    gateway: &Gateway,
     package_name: &str,
     channel_url: &str,
     platform: &str,
 ) -> Result<Option<String>> {
     // Delegate to multi-platform version with a single platform
-    get_latest_conda_version_multi_platform(package_name, channel_url, &[platform]).await
+    get_latest_conda_version_multi_platform(gateway, package_name, channel_url, &[platform]).await
 }
 
 #[cfg(test)]
@@ -191,8 +187,12 @@ mod tests {
         // We can't easily test the actual query without mocking, but we can
         // verify the function signature is correct and it doesn't panic
 
+        use rattler_repodata_gateway::Gateway;
+        let gateway = Gateway::builder().finish();
+
         // This will fail with an invalid channel, but that's expected
         let result = get_latest_conda_version(
+            &gateway,
             "nonexistent-package-xyz",
             "https://conda.anaconda.org/conda-forge",
             "linux-64",

@@ -1,6 +1,14 @@
+use std::path::PathBuf;
+
 use anyhow::Result;
 use clap::Parser;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use pixi_config::ConfigCli;
+use pixi_core::{
+    environment::LockFileUsage, repodata::Repodata, workspace::DiscoveryStart,
+    UpdateLockFileOptions, WorkspaceLocator,
+};
+use pixi_manifest::FeaturesExt;
 use serde::Serialize;
 
 #[derive(Debug, Serialize, Clone, serde::Deserialize)]
@@ -43,7 +51,10 @@ struct Cli {
 
     /// Path to the pixi.toml file (defaults to current directory)
     #[arg(short = 'f', long)]
-    manifest: Option<String>,
+    manifest: Option<PathBuf>,
+
+    #[clap(flatten)]
+    pub config: ConfigCli,
 }
 
 #[tokio::main]
@@ -64,7 +75,7 @@ async fn main() -> Result<()> {
     if cli.verbose {
         println!("Running pixi-outdated with options:");
         if let Some(ref manifest) = cli.manifest {
-            println!("  Manifest: {}", manifest);
+            println!("  Manifest: {}", manifest.display());
         }
         println!("  Explicit only: {}", cli.explicit);
         if let Some(ref env) = cli.environment {
@@ -85,17 +96,41 @@ async fn main() -> Result<()> {
     run(cli).await
 }
 
-// Use the library function for getting platforms from lockfile
-use pixi_outdated::get_platforms_from_lockfile;
-
 async fn run(cli: Cli) -> Result<()> {
-    // Step 1: Get package list from `pixi list --json`
     // Determine which platforms to check
+    let config = cli.config;
+    let manifest_search_path = match cli.manifest {
+        Some(path) => DiscoveryStart::ExplicitManifest(path.clone()),
+        None => DiscoveryStart::CurrentDir,
+    };
+
+    let workspace = WorkspaceLocator::for_cli()
+        .with_search_start(manifest_search_path)
+        .locate()?
+        .with_cli_config(config);
+
+    // Get the repodata gateway from the workspace
+    let gateway = workspace
+        .repodata_gateway()
+        .map_err(|e| anyhow::anyhow!("Failed to get repodata gateway: {}", e))?;
+
+    // Get the environment to work with
+    let environment = if let Some(ref env_name) = cli.environment {
+        workspace
+            .environment(env_name.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Environment '{}' not found", env_name))?
+    } else {
+        workspace.default_environment()
+    };
+
     let platforms_to_check: Vec<String> = if let Some(ref plat) = cli.platform {
         vec![plat.clone()]
     } else {
-        // When no platform is specified, read platforms from lockfile for the specified environment
-        get_platforms_from_lockfile(cli.manifest.as_deref(), cli.environment.as_deref())?
+        environment
+            .platforms()
+            .into_iter()
+            .map(|p| p.to_string())
+            .collect()
     };
 
     let check_multiple_platforms = cli.platform.is_none();
@@ -103,6 +138,18 @@ async fn run(cli: Cli) -> Result<()> {
     if cli.verbose && !cli.json && check_multiple_platforms {
         println!("Checking platforms: {}\n", platforms_to_check.join(", "));
     }
+
+    // Load the lock file once
+    let lock_file = workspace
+        .update_lock_file(UpdateLockFileOptions {
+            lock_file_usage: LockFileUsage::Locked,
+            no_install: true,
+            max_concurrent_solves: workspace.config().max_concurrent_solves(),
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load lock file: {}", e))?
+        .0
+        .into_lock_file();
 
     // Track updates per platform (used for both JSON and text output)
     let mut platform_updates: std::collections::HashMap<String, Vec<PackageUpdate>> =
@@ -119,26 +166,78 @@ async fn run(cli: Cli) -> Result<()> {
             println!("Fetching package list for {}...", platform);
         }
 
-        let packages = match pixi_outdated::pixi::get_package_list(
-            cli.explicit,
-            cli.environment.as_deref(),
-            Some(platform.as_str()),
-            cli.manifest.as_deref(),
-            &cli.packages,
-        ) {
-            Ok(pkgs) => pkgs,
+        // Get all the packages in the environment from the lock file
+        let platform_parsed = match platform.parse() {
+            Ok(p) => p,
             Err(e) => {
-                // Platform might not be supported, skip it
                 if cli.verbose && !cli.json {
-                    eprintln!("Skipping platform {}: {}", platform, e);
+                    eprintln!("Skipping platform {}: invalid platform: {}", platform, e);
                 }
                 continue;
             }
         };
 
-        if packages.is_empty() {
+        let locked_deps = lock_file
+            .environment(environment.name().as_str())
+            .and_then(|env| env.packages(platform_parsed).map(Vec::from_iter))
+            .unwrap_or_default();
+
+        if locked_deps.is_empty() {
             if cli.verbose && !cli.json {
                 println!("No packages found for platform {}", platform);
+            }
+            continue;
+        }
+
+        // Convert LockedPackageRef to PixiPackage
+        let packages: Vec<pixi_outdated::pixi::PixiPackage> = locked_deps
+            .iter()
+            .filter_map(|locked_pkg| {
+                let pkg_name = match locked_pkg {
+                    rattler_lock::LockedPackageRef::Conda(conda_pkg) => {
+                        conda_pkg.record().name.as_normalized().to_string()
+                    }
+                    rattler_lock::LockedPackageRef::Pypi(pypi_pkg, _) => pypi_pkg.name.to_string(),
+                };
+
+                // Filter by package names if specified
+                if !cli.packages.is_empty() && !cli.packages.contains(&pkg_name) {
+                    return None;
+                }
+
+                // Determine package kind and convert
+                match locked_pkg {
+                    rattler_lock::LockedPackageRef::Conda(conda_pkg) => {
+                        let record = conda_pkg.record();
+                        let location = conda_pkg.location();
+                        Some(pixi_outdated::pixi::PixiPackage {
+                            name: record.name.as_normalized().to_string(),
+                            version: record.version.to_string(),
+                            build: Some(record.build.clone()),
+                            size_bytes: record.size,
+                            kind: pixi_outdated::pixi::PackageKind::Conda,
+                            source: Some(location.to_string()),
+                            is_explicit: true, // TODO: determine if explicit from manifest
+                        })
+                    }
+                    rattler_lock::LockedPackageRef::Pypi(pypi_pkg, _) => {
+                        Some(pixi_outdated::pixi::PixiPackage {
+                            name: pypi_pkg.name.to_string(),
+                            version: pypi_pkg.version.to_string(),
+                            build: None,
+                            size_bytes: None,
+                            kind: pixi_outdated::pixi::PackageKind::Pypi,
+                            source: None,
+                            is_explicit: true, // TODO: determine if explicit from manifest
+                        })
+                    }
+                }
+            })
+            .collect();
+
+        if packages.is_empty() {
+            if cli.verbose && !cli.json {
+                println!("No matching packages found for platform {}", platform);
             }
             continue;
         }
@@ -232,6 +331,7 @@ async fn run(cli: Cli) -> Result<()> {
                         platforms_to_check.iter().map(|s| s.as_str()).collect();
                     let latest_result =
                         pixi_outdated::conda::get_latest_conda_version_multi_platform(
+                            gateway,
                             &key.name,
                             channel_url,
                             &platform_refs,
@@ -402,8 +502,6 @@ async fn run(cli: Cli) -> Result<()> {
                 }
             }
         }
-
-        println!("\nAnalysis complete!");
     } else {
         // Single platform output
         if let Some(updates) = platform_updates.values().next() {
@@ -414,7 +512,6 @@ async fn run(cli: Cli) -> Result<()> {
                 );
             }
         }
-        println!("\nAnalysis complete!");
     }
 
     Ok(())
