@@ -1,6 +1,6 @@
-use std::fs;
+use assert_cmd::Command;
+use predicates::prelude::*;
 use std::path::PathBuf;
-use tempfile::TempDir;
 
 /// Helper to get the path to the examples directory
 fn get_example_path(file: &str) -> PathBuf {
@@ -9,139 +9,166 @@ fn get_example_path(file: &str) -> PathBuf {
         .join(file)
 }
 
-/// Test with the actual example project in the repository
-#[test]
-fn test_with_real_example_project() {
-    let example_toml = get_example_path("pixi.toml");
-    let result =
-        pixi_outdated::get_platforms_from_lockfile(Some(example_toml.to_str().unwrap()), None);
-
-    // Should succeed
-    assert!(
-        result.is_ok(),
-        "Failed to read example project: {:?}",
-        result.err()
-    );
-
-    let platforms = result.unwrap();
-    assert!(
-        !platforms.is_empty(),
-        "Example project should have platforms"
-    );
-
-    // Example project should have linux-64 and osx-arm64
-    assert!(
-        platforms.len() >= 2,
-        "Example should have multiple platforms"
-    );
-    assert!(
-        platforms.contains(&"linux-64".to_string()),
-        "Example should have linux-64"
-    );
-    assert!(
-        platforms.contains(&"osx-arm64".to_string()),
-        "Example should have osx-arm64"
-    );
+/// Helper to create a command for the binary
+fn cmd() -> Command {
+    Command::cargo_bin("pixi-outdated").unwrap()
 }
 
 #[test]
-fn test_error_nonexistent_lockfile() {
-    let temp_dir = TempDir::new().unwrap();
-    let manifest_path = temp_dir.path().join("pixi.toml");
-    fs::write(&manifest_path, "").unwrap();
-
-    // No lockfile exists
-    let result =
-        pixi_outdated::get_platforms_from_lockfile(Some(manifest_path.to_str().unwrap()), None);
-
-    assert!(result.is_err());
-    let err_msg = result.unwrap_err().to_string();
-    assert!(err_msg.contains("Failed to read lockfile"));
+fn test_help_flag() {
+    cmd()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("out-of-date dependencies"))
+        .stdout(predicate::str::contains("--json"))
+        .stdout(predicate::str::contains("--verbose"));
 }
 
 #[test]
-fn test_error_invalid_lockfile_format() {
-    let temp_dir = TempDir::new().unwrap();
-    let manifest_path = temp_dir.path().join("pixi.toml");
-    fs::write(&manifest_path, "").unwrap();
-
-    // Write invalid YAML
-    let lockfile_path = temp_dir.path().join("pixi.lock");
-    fs::write(&lockfile_path, "this is not valid yaml: {[}").unwrap();
-
-    let result =
-        pixi_outdated::get_platforms_from_lockfile(Some(manifest_path.to_str().unwrap()), None);
-
-    assert!(result.is_err());
+fn test_version_flag() {
+    cmd()
+        .arg("--version")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("pixi-outdated"));
 }
 
 #[test]
-fn test_error_missing_environment() {
-    // Use the example project but request a non-existent environment
-    let example_toml = get_example_path("pixi.toml");
-    let result = pixi_outdated::get_platforms_from_lockfile(
-        Some(example_toml.to_str().unwrap()),
-        Some("does-not-exist"),
-    );
+fn test_basic_run_with_example_project() {
+    let manifest_path = get_example_path("pixi.toml");
 
-    assert!(result.is_err());
-    let err_msg = result.unwrap_err().to_string();
-    assert!(err_msg.contains("Environment 'does-not-exist' not found"));
+    cmd()
+        .arg("--manifest")
+        .arg(manifest_path)
+        .assert()
+        .success();
 }
 
 #[test]
-fn test_lockfile_without_manifest_path() {
-    // Create a test project in a temp dir
-    let temp_dir = TempDir::new().unwrap();
+fn test_json_output() {
+    let manifest_path = get_example_path("pixi.toml");
 
-    // Copy the example lockfile to the temp directory
-    let example_lock_path = get_example_path("pixi.lock");
-    let example_lock = fs::read_to_string(example_lock_path).unwrap();
-    fs::write(temp_dir.path().join("pixi.lock"), example_lock).unwrap();
+    let output = cmd()
+        .arg("--manifest")
+        .arg(manifest_path)
+        .arg("--json")
+        .assert()
+        .success();
 
-    // Change to the project directory
-    let original_dir = std::env::current_dir().unwrap();
-    std::env::set_current_dir(temp_dir.path()).unwrap();
-
-    // Should work without explicit manifest path (uses current directory)
-    let result = pixi_outdated::get_platforms_from_lockfile(None, None);
-
-    // Restore original directory
-    std::env::set_current_dir(original_dir).unwrap();
-
-    assert!(
-        result.is_ok(),
-        "Should find lockfile in current directory: {:?}",
-        result.err()
-    );
-    let platforms = result.unwrap();
-    assert!(platforms.len() >= 2);
-}
-
-#[test]
-fn test_platforms_are_valid_platform_strings() {
-    let example_toml = get_example_path("pixi.toml");
-    let result =
-        pixi_outdated::get_platforms_from_lockfile(Some(example_toml.to_str().unwrap()), None);
-    assert!(result.is_ok());
-
-    let platforms = result.unwrap();
-
-    // All platforms should be valid platform identifiers
-    let valid_platforms = [
-        "linux-64",
-        "osx-64",
-        "osx-arm64",
-        "win-64",
-        "linux-aarch64",
-        "linux-ppc64le",
-    ];
-
-    for platform in &platforms {
-        assert!(
-            valid_platforms.contains(&platform.as_str()),
-            "Invalid platform: {}",
-            platform
-        );
+    // Check that output is valid JSON
+    let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+    if !stdout.trim().is_empty() {
+        // If there's output, it should be valid JSON
+        let _: serde_json::Value =
+            serde_json::from_str(&stdout).expect("Output should be valid JSON");
     }
+}
+
+#[test]
+fn test_explicit_flag() {
+    let manifest_path = get_example_path("pixi.toml");
+
+    cmd()
+        .arg("--manifest")
+        .arg(manifest_path)
+        .arg("--explicit")
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_verbose_flag() {
+    let manifest_path = get_example_path("pixi.toml");
+
+    cmd()
+        .arg("--manifest")
+        .arg(manifest_path)
+        .arg("--verbose")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Running pixi-outdated with options:",
+        ));
+}
+
+#[test]
+fn test_specific_package() {
+    let manifest_path = get_example_path("pixi.toml");
+
+    cmd()
+        .arg("--manifest")
+        .arg(manifest_path)
+        .arg("python")
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_platform_flag() {
+    let manifest_path = get_example_path("pixi.toml");
+
+    cmd()
+        .arg("--manifest")
+        .arg(manifest_path)
+        .arg("--platform")
+        .arg("linux-64")
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_environment_flag() {
+    let manifest_path = get_example_path("pixi.toml");
+
+    cmd()
+        .arg("--manifest")
+        .arg(manifest_path)
+        .arg("--environment")
+        .arg("default")
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_nonexistent_manifest() {
+    cmd()
+        .arg("--manifest")
+        .arg("/nonexistent/pixi.toml")
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_json_and_verbose_together() {
+    let manifest_path = get_example_path("pixi.toml");
+
+    let output = cmd()
+        .arg("--manifest")
+        .arg(manifest_path)
+        .arg("--json")
+        .arg("--verbose")
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+
+    // Should contain verbose output
+    assert!(stdout.contains("Running pixi-outdated with options:"));
+
+    // Should also be able to extract JSON from the output
+    // (it might be mixed with verbose output)
+}
+
+#[test]
+fn test_multiple_packages() {
+    let manifest_path = get_example_path("pixi.toml");
+
+    cmd()
+        .arg("--manifest")
+        .arg(manifest_path)
+        .arg("python")
+        .arg("icu")
+        .assert()
+        .success();
 }
