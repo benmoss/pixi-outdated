@@ -1,5 +1,8 @@
 name: Release
 
+env:
+  PIXI_VERSION: "v0.55.0"
+
 on:
   push:
     tags:
@@ -76,7 +79,7 @@ jobs:
       - name: Setup pixi
         uses: prefix-dev/setup-pixi@ba3bb36eb2066252b2363392b7739741bb777659 # v0.8.1
         with:
-          pixi-version: v0.40.0
+          pixi-version: ${{ env.PIXI_VERSION }}
           cache: true
 
       - name: Build release binary
