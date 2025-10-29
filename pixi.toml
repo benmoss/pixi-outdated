@@ -1,9 +1,10 @@
 [workspace]
 authors = ["Ben Moss <ben@mossity.com>"]
-channels = ["conda-forge"]
+channels = ["https://prefix.dev/conda-forge"]
 name = "pixi-update"
 platforms = ["osx-arm64", "linux-64", "win-64", "osx-64"]
-version = "0.1.0"
+version = "0.2.0"
+preview = ["pixi-build"]
 
 [tasks]
 
@@ -41,3 +42,14 @@ toml-format = { cmd = "taplo fmt", env = { RUST_LOG = "warn" } }
 toml-lint = "taplo lint --verbose **/pixi.toml"
 typecheck-python = "basedpyright"
 typos = "typos --force-exclude"
+
+[package]
+name = "pixi-outdated"
+
+[package.build.backend]
+name = "pixi-build-rust"
+version = "0.4.*"
+channels = [
+  "https://prefix.dev/pixi-build-backends",
+  "https://prefix.dev/conda-forge",
+]
