@@ -3013,19 +3013,6 @@ dependencies = [
 
 [[package]]
 name = "indicatif"
-version = "0.17.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "183b3088984b400f4cfac3620d5e076c84da5364016b4f49473de574b2586235"
-dependencies = [
- "console 0.15.11",
- "number_prefix",
- "portable-atomic",
- "unicode-width 0.2.2",
- "web-time",
-]
-
-[[package]]
-name = "indicatif"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ade6dfcba0dfb62ad59e59e7241ec8912af34fd29e0e743e3db992bd278e8b65"
@@ -3928,12 +3915,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "number_prefix"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "830b246a0e5f20af87141b25c173cd1b609bd7779a4617d6ec582abaf90870f3"
-
-[[package]]
 name = "objc2-core-foundation"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4253,7 +4234,6 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "clap",
- "indicatif 0.17.11",
  "pixi_cli",
  "pixi_config",
  "pixi_core",
@@ -4394,7 +4374,7 @@ dependencies = [
  "futures",
  "human_bytes",
  "indexmap 2.12.0",
- "indicatif 0.18.2",
+ "indicatif",
  "is_executable",
  "itertools 0.14.0",
  "libc",
@@ -4578,7 +4558,7 @@ dependencies = [
  "human_bytes",
  "humantime",
  "indexmap 2.12.0",
- "indicatif 0.18.2",
+ "indicatif",
  "itertools 0.14.0",
  "libc",
  "miette 7.6.0",
@@ -4732,7 +4712,7 @@ dependencies = [
  "fs-err",
  "futures",
  "indexmap 2.12.0",
- "indicatif 0.18.2",
+ "indicatif",
  "is_executable",
  "itertools 0.14.0",
  "libc",
@@ -4879,7 +4859,7 @@ name = "pixi_progress"
 version = "0.1.0"
 source = "git+https://github.com/prefix-dev/pixi#6610c49ddf045d6dd53e55afc3fe0c64847e0d2c"
 dependencies = [
- "indicatif 0.18.2",
+ "indicatif",
  "parking_lot 0.12.5",
 ]
 
@@ -4949,7 +4929,7 @@ dependencies = [
  "futures",
  "human_bytes",
  "indexmap 2.12.0",
- "indicatif 0.18.2",
+ "indicatif",
  "itertools 0.14.0",
  "parking_lot 0.12.5",
  "pixi_command_dispatcher",
@@ -5074,7 +5054,7 @@ source = "git+https://github.com/prefix-dev/pixi#6610c49ddf045d6dd53e55afc3fe0c6
 dependencies = [
  "async-fd-lock",
  "fs-err",
- "indicatif 0.18.2",
+ "indicatif",
  "is_executable",
  "itertools 0.14.0",
  "miette 7.6.0",
@@ -5661,7 +5641,7 @@ dependencies = [
  "futures",
  "humantime",
  "indexmap 2.12.0",
- "indicatif 0.18.2",
+ "indicatif",
  "itertools 0.14.0",
  "memchr",
  "memmap2 0.9.9",

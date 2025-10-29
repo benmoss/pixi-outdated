@@ -39,8 +39,6 @@ regex = "1.11"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
-# Progress bars and terminal UI
-indicatif = "0.17"
 pixi_core = { git = "https://github.com/prefix-dev/pixi", version = "0.1.0" }
 pixi_cli = { git = "https://github.com/prefix-dev/pixi", version = "0.1.0" }
 pixi_config = { git = "https://github.com/prefix-dev/pixi", version = "0.1.0" }

@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use pixi_config::ConfigCli;
 use pixi_core::{
     environment::LockFileUsage, repodata::Repodata, workspace::DiscoveryStart,
@@ -288,37 +287,12 @@ async fn run(cli: Cli) -> Result<()> {
         }
     }
 
-    // Create multi-progress for showing progress bars (only if not JSON and not verbose)
-    let multi_progress = if !cli.json && !cli.verbose {
-        Some(MultiProgress::new())
-    } else {
-        None
-    };
-
-    let progress_bar = if let Some(ref mp) = multi_progress {
-        let pb = mp.add(ProgressBar::new(unique_packages.len() as u64));
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{prefix:.bold.dim} [{bar:40.cyan/blue}] {pos}/{len} {msg}")
-                .expect("Invalid progress bar template")
-                .progress_chars("█▓▒░ "),
-        );
-        pb.set_prefix("Checking".to_string());
-        Some(pb)
-    } else {
-        None
-    };
-
     // Cache for version queries (package_key -> latest_version)
     let mut version_cache: std::collections::HashMap<PackageKey, Option<String>> =
         std::collections::HashMap::new();
 
     // Query each unique package once
     for key in unique_packages.keys() {
-        if let Some(ref pb) = progress_bar {
-            pb.set_message(key.name.clone());
-        }
-
         match key.kind {
             pixi_outdated::pixi::PackageKind::Conda => {
                 if let Some(ref channel_url) = key.channel {
@@ -374,14 +348,6 @@ async fn run(cli: Cli) -> Result<()> {
                 }
             }
         }
-
-        if let Some(ref pb) = progress_bar {
-            pb.inc(1);
-        }
-    }
-
-    if let Some(ref pb) = progress_bar {
-        pb.finish_with_message("Done");
     }
 
     // Now build updates per platform using the cached results
