@@ -4,10 +4,10 @@ A CLI tool to check for outdated dependencies in pixi projects.
 
 ## Installation
 
-While our PR to get this package added to conda-forge is pending, you can install pixi-outdated with pixi via:
+You can install pixi-outdated with `pixi` via:
 
 ```bash
-pixi global install --git https://github.com/benmoss/pixi-outdated
+pixi global install pixi-outdated
 ```
 
 It can also be installed by downloading the artifact from the latest release and adding it to your PATH.
